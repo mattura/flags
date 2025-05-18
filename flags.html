@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<title>Flag Colour Picker for PLASMA</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: sans-serif;
+      background: #f0f0f0;
+    }
+
+    h1 {
+      text-align: center;
+      padding: 20px;
+      font-size: 2rem;
+      margin: 0;
+    }
+
+    #flags-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    .flag-btn {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 120px;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: bold;
+      border: 1px solid #222;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      color: white;
+      cursor: pointer;
+      background-size: cover;
+      background-position: center;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+      transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+      user-select: none;
+      text-align: center;
+      padding: 10px;
+    }
+
+    .flag-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+
+    .flag-title {
+      font-size: 1.2em;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .selected {
+      border: 3px solid #00ff00; /* Bright green border for selected */
+      box-shadow: 0 0 10px #00ff00;
+    }
+    .flag-info {
+      font-size: 0.9em;
+      line-height: 1.2em;
+    }
+    .status {
+      text-align: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
+      width: fit-content;
+      margin: 0 auto 12px auto;
+      color: white;
+      user-select: none;
+      transition: background-color 0.3s ease;
+    }
+
+    .status.connected {
+      background-color: #28a745; /* green */
+    }
+
+    .status.connecting {
+      background-color: #ffbf00; /* amber */
+    }
+
+    .status.offline {
+      background-color: #dc3545; /* red */
+    }
+</style>
+</head>
+<body>
+<h1>Eurovision Flag Lights</h1>
+<div id="connection-status" class="status connecting">Connecting...</div>
+<div style="text-align: center; margin-bottom: 10px;">
+  Brightness: 
+  <input id="brightness-slider" type="range" min="0" max="256" value="256" step="32" style="width: 200px;">
+</div>
+<div id="flags-container"></div>
+<div id="status">Connecting to MQTT broker...</div>
+
+<script>
+(() => {
+  // MQTT config: replace these with your actual broker IP and port
+  const BROKER_ADDRESS = '192.168.1.2';  // example IP
+  const BROKER_PORT = 9001;               // example websocket port
+  var websock = 'ws://';
+  if (window.location.protocol === 'https:') { websock = 'wss://'; }
+  const broker = BROKER_ADDRESS;
+  const port = BROKER_PORT;
+  const mqttpath = '';  // can add if your broker uses a path like '/mqtt'
+  const topic = 'PLASMA';
+  const topicres = 'PLASMA/ALIVE';
+  const clientId = 'flag-picker-' + Math.random().toString(16).substring(2, 8);
+  const connectUrl = websock + broker + ':' + port + mqttpath;
+  const options = {
+    keepalive: 30,
+    clientId: clientId,
+    clean: true,
+    connectTimeout: 5000,
+    reconnectPeriod: 1000,
+  };
+  // Flags dictionary: each has colours concatenated hex RGB or RGBW, and splits string
+const flags = {
+  "Norway": {
+    artist: "Kyle Alessandro",
+    song: "Lighter",
+    colours: "#BA0C2F#000000FF#00205B",
+    splits: "000012210000000000"
+  },
+  "Luxembourg": {
+    artist: "Laura Thorn",
+    song: "La Poupée Monte Le Son",
+    colours: "#ED2939#000000FF#00A1DE",
+    splits: "012"
+  },
+  "Estonia": {
+    artist: "Tommy Cash",
+    song: "Espresso Macchiato",
+    colours: "#00000022#000000CC#0072CE",
+    splits: "012"
+  },
+  "Israel": {
+    artist: "Yuval Raphael",
+    song: "New Day Will Rise",
+    colours: "#000000FF#0000FF",
+    splits: "10001010001"
+  },
+  "Lithuania": {
+    artist: "Katarsis",
+    song: "Tavo Akys",
+    colours: "#FDB913#006A44#C1272D",
+    splits: "012"
+  },
+  "Spain": {
+    artist: "Melody",
+    song: "ESA DIVA",
+    colours: "#FF151B#F1BF00",
+    splits: "010101"
+  },
+  "Ukraine": {
+    artist: "Ziferblat",
+    song: "Bird of Pray",
+    colours: "#0057B7#FFD700",
+    splits: "01"
+  },
+  "United Kingdom": {
+    artist: "Remember Monday",
+    song: "What The Hell Just Happened?",
+    colours: "#00247D#000000FF#CF142B",
+    splits: "0001221000"
+  },
+  "Austria": {
+    artist: "JJ",
+    song: "Wasted Love",
+    colours: "#ED2939#000000FF",
+    splits: "010"
+  },
+  "Iceland": {
+    artist: "VÆB",
+    song: "RÓA",
+    colours: "#003897#000000FF#D72828",
+    splits: "000012210000000000"
+  },
+  "Latvia": {
+    artist: "Tautumeitas",
+    song: "Bur Man Laimi",
+    colours: "#9E3039#000000FF",
+    splits: "000000011110000000"
+  },
+  "Netherlands": {
+    artist: "Claude",
+    song: "C’est La Vie",
+    colours: "#21468B#000000FF#AE1C28",
+    splits: "012"
+  },
+  "Finland": {
+    artist: "Erika Vikman",
+    song: "ICH KOMME",
+    colours: "#002F6C#000000FF",
+    splits: "000000011110000000"
+  },
+  "Italy": {
+    artist: "Lucio Corsi",
+    song: "Volevo Essere Un Duro",
+    colours: "#008C45#F4F5F0#CD212A",
+    splits: "012"
+  },
+  "Poland": {
+    artist: "Justyna Steczkowska",
+    song: "GAJA",
+    colours: "#000000FF#DC143C",
+    splits: "01"
+  },
+  "Germany": {
+    artist: "Abor & Tynna",
+    song: "Baller",
+    colours: "#000000#DD0000#FFCE00",
+    splits: "012"
+  },
+  "Greece": {
+    artist: "Klavdia",
+    song: "Asteromáta",
+    colours: "#0D5EAF#000000FF",
+    splits: "010101010101010101"
+  },
+  "Armenia": {
+    artist: "PARG",
+    song: "SURVIVOR",
+    colours: "#D90012#0033A0#F2A800",
+    splits: "012"
+  },
+  "Switzerland": {
+    artist: "Zoë Më",
+    song: "Voyage",
+    colours: "#FF0000#000000FF",
+    splits: "0001000"
+  },
+  "Malta": {
+    artist: "Miriana Conte",
+    song: "SERVING",
+    colours: "#000000FF#D90012#33000055",
+    splits: "02000000001111111111"
+  },
+  "Portugal": {
+    artist: "NAPA",
+    song: "Deslocado",
+    colours: "#004000#DA291C#FFE900",
+    splits: "00002111111"
+  },
+  "Denmark": {
+    artist: "Sissal",
+    song: "Hallucination",
+    colours: "#C60C30#000000FF",
+    splits: "001000"
+  },
+  "Sweden": {
+    artist: "KAJ",
+    song: "Bara Bada Bastu",
+    colours: "#006AA7#FECC00",
+    splits: "001000"
+  },
+  "France": {
+    artist: "Louane",
+    song: "maman",
+    colours: "#0055A4#000000FF#EF4135",
+    splits: "012"
+  },
+  "San Marino": {
+    artist: "Gabry Ponte",
+    song: "Tutta L’Italia",
+    colours: "#000000FF#5EB6E4",
+    splits: "01"
+  },
+  "Albania": {
+    artist: "Shkodra Elektronike",
+    song: "Zjerm",
+    colours: "#E41E20#000000",
+    splits: "000100"
+  }
+};
+
+const NUM_LEDS = 100;   //arbitrary resolution
+let brightnessFactor = 1.0;
+let selectedFlag = null;
+function expandSplits(splits, length) {
+    if (splits.length >= length) return splits.slice(0, length);
+    const expanded = [];
+    const repeat = Math.floor(length / splits.length);
+    const remainder = length % splits.length;
+    for (let i = 0; i < splits.length; i++) {
+        const count = repeat + (i < remainder ? 1 : 0);
+        expanded.push(...Array(count).fill(splits[i]));
+    }
+    return expanded.join('');
+}
+function parseAndScaleRgbwFromHex(hex, factor = brightnessFactor) {
+  hex = hex.replace('#', '');
+  const r = Math.round(parseInt(hex.slice(0, 2), 16) * factor);
+  const g = Math.round(parseInt(hex.slice(2, 4), 16) * factor);
+  const b = Math.round(parseInt(hex.slice(4, 6), 16) * factor);
+  const w = hex.length === 8 ? Math.round(parseInt(hex.slice(6, 8), 16) * factor) : 0;
+  return { r, g, b, w };
+}
+function hexToRgbw(hex) {
+  const { r, g, b, w } = parseAndScaleRgbwFromHex(hex, 1);
+  const blend = val => Math.min(255, val + w);
+  return `rgba(${blend(r)}, ${blend(g)}, ${blend(b)}, 1)`;
+}
+function rgbwToHex({ r, g, b, w = 0 }) {
+  const toHex = val => Math.max(0, Math.min(255, val)).toString(16).padStart(2, '0');
+  const rgb = `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  return w > 0 ? `#${rgb}${toHex(w)}` : rgb;
+}
+
+function generateBackgroundGradient(colours, splits) {
+    const expanded = expandSplits(splits, NUM_LEDS);
+    const colourList = colours.split('#').filter(Boolean).map(c => '#' + c);
+    const width = 100 / NUM_LEDS;
+    const stops = expanded.split('').map((ch, i) => {
+        const idx = parseInt(ch);
+        const colour = hexToRgbw(colourList[idx] || '#000000');
+        const start = i * width;
+        const end = (i + 1) * width;
+        return `${colour} ${start}%, ${colour} ${end}%`;
+    });
+    return `linear-gradient(to right, ${stops.join(', ')})`;
+}
+
+function renderFlagButtons(flags) {
+    const container = document.getElementById('flags-container');
+    for (const flagName in flags) {
+      const btn = document.createElement('div');
+      btn.className = 'flag-btn';
+      btn.onclick = () => {
+          publishFlag(flagName);
+          if (selectedFlag) {
+            selectedFlag.classList.remove('selected');
+          }
+          btn.classList.add('selected');
+          selectedFlag = btn;
+      };
+      btn.style.backgroundImage = generateBackgroundGradient(flags[flagName].colours, flags[flagName].splits);
+      const title = document.createElement('div');
+      title.className = 'flag-title';
+      title.textContent = flagName;
+      const info = document.createElement('div');
+      info.className = 'flag-info';
+      info.innerHTML = `${flags[flagName].artist}<br>${flags[flagName].song}`;
+      btn.appendChild(title);
+      btn.appendChild(info);
+      container.appendChild(btn);
+    }
+}
+
+    function publishFlag(name) {
+        const data = flags[name];
+        const scaledColours = data.colours.match(/#[0-9a-fA-F]{6,8}/g)
+        .map(hex => rgbwToHex(parseAndScaleRgbwFromHex(hex))).join('');
+        const msg = JSON.stringify({
+            colours: scaledColours,
+            splits: data.splits
+        });
+        console.log(`Publishing ${name}: ${msg}`);
+        client.publish(topic, msg);
+    }
+
+    renderFlagButtons(flags);
+
+    document.getElementById('brightness-slider').addEventListener('input', function () {
+      brightnessFactor = parseInt(this.value) / 255;
+      console.log(brightnessFactor);
+      if (selectedFlag) {
+        const flagName = selectedFlag.querySelector('.flag-title').textContent;
+        publishFlag(flagName);
+      }
+    });
+    // Connect to MQTT broker
+    const client = mqtt.connect(connectUrl, options);
+    const HEARTBEAT_TIMEOUT_MS = 5000;
+    let lastHeartbeat = 0;
+    const statusEl = document.getElementById('connection-status');
+
+    function updateStatus(state, id='') {
+      statusEl.className = 'status ' + state;
+      if (state === 'connected') {
+        statusEl.textContent = `Connected as: ${id}`;
+      } else if (state === 'connecting') {
+        statusEl.textContent = 'Connecting...';
+      } else if (state === 'offline') {
+        statusEl.textContent = 'Offline';
+      }
+    }
+
+  client.on('connect', () => {
+    console.log('Connected to MQTT broker');
+    updateStatus('connected', client.options.clientId);
+    client.subscribe(topicres, { qos: 0 }, (err) => {
+      if (err) {
+        console.warn('Subscribe error:', err);
+      }
+    });
+  });
+
+  client.on('error', (err) => {
+    console.error('Connection error:', err);
+    updateStatus('offline');
+    client.end();
+  });
+
+  client.on('reconnect', () => {
+    console.log('Reconnecting...');
+    updateStatus('connecting');
+  });
+
+  client.on('offline', () => {
+    console.log('Client offline');
+    updateStatus('offline');
+  });
+
+  client.on('message', (topic, message) => {
+    console.log(`Message received on topic ${topic}: ${message.toString()}`);
+    if (topic === topicres) {
+      lastHeartbeat = Date.now();
+      updateStatus('connected', client.options.clientId);
+    }
+  });
+    setInterval(() => {
+      if (Date.now() - lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+        updateStatus('offline');
+      }
+  }, 1000);
+})();
+</script>
+
+</body>
+</html>
